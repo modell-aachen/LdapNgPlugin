@@ -18,8 +18,8 @@ package Foswiki::Plugins::LdapNgPlugin;
 use strict;
 use vars qw($VERSION $RELEASE $core $NO_PREFS_IN_TOPIC $SHORTDESCRIPTION);
 
-$VERSION = '$Rev: 20110106 (2011-01-06) $';
-$RELEASE = "4.00";
+$VERSION = "4.0";
+$RELEASE = "4.0";
 $NO_PREFS_IN_TOPIC = 1;
 $SHORTDESCRIPTION = 'Query and display data from an LDAP directory';
 
