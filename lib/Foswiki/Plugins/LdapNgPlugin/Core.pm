@@ -129,6 +129,7 @@ sub handleLdap {
   my @entries = $search->sorted(@theSort);
   @entries = reverse @entries if $theReverse eq 'on';
   my $index = 0;
+  $ldap->initCache();
   foreach my $entry (@entries) {
     my $dn = $entry->dn();
     
@@ -157,6 +158,10 @@ sub handleLdap {
     my $text = '';
     $text .= $theSep if $result;
     $text .= $theFormat;
+    my $loginName = $data{$ldap->{loginAttribute}};
+    $loginName = $loginName->[0] if ref $loginName;
+    $data{rewrittenLoginName} = $ldap->rewriteLoginName($loginName);
+    $data{mappedWikiName} = $ldap->getWikiNameOfLogin($data{rewrittenLoginName});
     $text = expandVars($text, %data);
     $result .= $text;
     last if $index == $theLimit;
