@@ -207,6 +207,7 @@ sub handleLdapUsers {
   my $theInclude = $params->{include};
   my $theExclude = $params->{exclude};
   my $theCasesensitive = $params->{casesensitive} || 'on';
+  my $theDefaultText = $params->{default} || '';
   my $theHideUnknownUsers = $params->{hideunknown} || 'on';
   $theHideUnknownUsers = ($theHideUnknownUsers eq 'on')?1:0;
 
@@ -255,6 +256,7 @@ sub handleLdapUsers {
     $result .= $line;
     last if $index == $theLimit;
   }
+  $result = $theDefaultText if $result eq '';
 
   return expandVars($theHeader).$result.expandVars($theFooter);
 }
