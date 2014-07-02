@@ -234,6 +234,7 @@ sub handleLdapUsers {
     my $loginName = $ldap->getLoginOfWikiName($wikiName);
     my $emailAddrs = $ldap->getEmails($loginName);
     my $distinguishedName = $ldap->getDnOfLogin($loginName) || '';
+    my $display = $ldap->getDisplayAttributesOfLogin($loginName) || {};
     my $displayName;
     if (Foswiki::Func::topicExists($mainWeb, $wikiName)) {
       $displayName = "[[$mainWeb.$wikiName][$wikiName]]";
@@ -252,7 +253,8 @@ sub handleLdapUsers {
       displayName=>$displayName,
       dn=>$distinguishedName,
       loginName=>$loginName,
-      emails=>$emailAddrs);
+      emails=>$emailAddrs,
+      %$display);
     $result .= $line;
     last if $index == $theLimit;
   }
