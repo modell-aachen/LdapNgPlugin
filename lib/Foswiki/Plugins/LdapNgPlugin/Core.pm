@@ -81,6 +81,7 @@ sub handleLdap {
   my $theLimit = $params->{limit} || 0;
   my $theSkip = $params->{skip} || 0;
   my $theHideNull = $params->{hidenull} || 'off';
+  my $theNullText = $params->{nulltext} || '';
   my $theClear = $params->{clear} || '';
   my $theExclude = $params->{exclude} || '';
   my $theInclude = $params->{include} || '';
@@ -122,7 +123,7 @@ sub handleLdap {
   }
 
   my $count = $search->count() || 0;
-  return '' if ($count <= $theSkip) && $theHideNull eq 'on';
+  return $theNullText if ($count <= $theSkip) && $theHideNull eq 'on';
 
   # format
   my $result = '';
