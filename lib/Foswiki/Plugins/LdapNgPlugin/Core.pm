@@ -288,18 +288,15 @@ sub handleLdapFormatUser {
   } else {
     $displayName = "<nop>$wikiName";
   }
+  return $theDefaultText if !$wikiName;
 
-  my $result = expandVars($theFormat,
+  return expandVars($theFormat,
     wikiName=>$wikiName,
     displayName=>$displayName,
     dn=>$distinguishedName,
     loginName=>$theUser,
     emails=>$email,
     %$display);
-
-  $result = $theDefaultText if $result eq '';
-
-  return $result;
 }
 
 
