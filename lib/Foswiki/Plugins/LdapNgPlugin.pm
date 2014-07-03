@@ -34,6 +34,10 @@ sub initPlugin {
     return getCore(shift)->handleLdapUsers(@_);
   });
 
+  Foswiki::Func::registerTagHandler('LDAPFORMATUSER', sub {
+    return getCore(shift)->handleLdapFormatUser(@_);
+  });
+
   Foswiki::Func::registerTagHandler('EMAIL2WIKINAME', sub {
     return getCore(shift)->handleEmailToWikiName(@_);
   });

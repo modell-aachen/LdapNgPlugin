@@ -268,6 +268,42 @@ sub handleLdapUsers {
 }
 
 ###############################################################################
+sub handleLdapFormatUser {
+  my ($this, $params, $topic, $web) = @_;
+
+  my $ldap = Foswiki::Contrib::LdapContrib::getLdapContrib($this->{session});
+  my $theUser = $params->{_DEFAULT};
+  my $theFormat = $params->{format} || '$displayName';
+  my $theCasesensitive = $params->{casesensitive} || 'on';
+  my $theDefaultText = $params->{default} || '';
+
+  my $email = $ldap->getEmails($theUser);
+  my $distinguishedName = $ldap->getDnOfLogin($theUser) || '';
+  my $display = $ldap->getDisplayAttributesOfLogin($theUser) || {};
+  my $wikiName = $ldap->getWikiNameOfLogin($theUser);
+  my $mainWeb = $Foswiki::cfg{UsersWeb};
+  my $displayName;
+  if (Foswiki::Func::topicExists($mainWeb, $wikiName)) {
+    $displayName = "[[$mainWeb.$wikiName][$wikiName]]";
+  } else {
+    $displayName = "<nop>$wikiName";
+  }
+
+  my $result = expandVars($theFormat,
+    wikiName=>$wikiName,
+    displayName=>$displayName,
+    dn=>$distinguishedName,
+    loginName=>$theUser,
+    emails=>$email,
+    %$display);
+
+  $result = $theDefaultText if $result eq '';
+
+  return $result;
+}
+
+
+###############################################################################
 sub handleEmailToWikiName {
   my ($this, $params, $topic, $web) = @_;
 
