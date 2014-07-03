@@ -205,6 +205,7 @@ sub handleLdapUsers {
   my $theLimit = $params->{limit} || 0;
   my $theSkip = $params->{skip} || 0;
   my $theInclude = $params->{include};
+  my $theIncludeLogin = $params->{includelogin};
   my $theExclude = $params->{exclude};
   my $theCasesensitive = $params->{casesensitive} || 'on';
   my $theDefaultText = $params->{default} || '';
@@ -232,6 +233,9 @@ sub handleLdapUsers {
     }
 
     my $loginName = $ldap->getLoginOfWikiName($wikiName);
+    $theIncludeLogin = "(?i)$theIncludeLogin" if $theIncludeLogin && $theCasesensitive ne 'off';
+    next if $theIncludeLogin && $loginName !~ /$theIncludeLogin/;
+
     my $emailAddrs = $ldap->getEmails($loginName);
     my $distinguishedName = $ldap->getDnOfLogin($loginName) || '';
     my $display = $ldap->getDisplayAttributesOfLogin($loginName) || {};
