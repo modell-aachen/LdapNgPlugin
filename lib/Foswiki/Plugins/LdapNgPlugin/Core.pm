@@ -163,6 +163,7 @@ sub handleLdap {
     $loginName = $loginName->[0] if ref $loginName;
     $data{rewrittenLoginName} = $ldap->rewriteLoginName($loginName);
     $data{mappedWikiName} = $ldap->getWikiNameOfLogin($data{rewrittenLoginName});
+    $data{isUser} = $data{mappedWikiName} ? 1 : 0;
     $text = expandVars($text, %data);
     $result .= $text;
     last if $index == $theLimit;
