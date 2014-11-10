@@ -166,7 +166,7 @@ sub handleLdap {
         $rln = $ldap->locale_lc($loginName) if $ldap->{caseSensitivity} eq 'off';
         $rln = $ldap->rewriteLoginName($rln);
         $rln = $ldap->normalizeLoginName($rln) if $ldap->{normalizeLoginName};
-        $data{rewriteLoginName} = $rln;
+        $data{rewrittenLoginName} = $rln;
         $data{mappedWikiName} = $ldap->getWikiNameOfLogin($data{rewrittenLoginName});
     }
     $data{isUser} = $data{mappedWikiName} ? 1 : 0;
