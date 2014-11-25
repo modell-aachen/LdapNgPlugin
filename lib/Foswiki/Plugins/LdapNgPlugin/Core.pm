@@ -19,6 +19,7 @@ use strict;
 use Foswiki::Contrib::LdapContrib ();
 use Digest::MD5 ();
 use Cache::FileCache();
+use JSON;
 
 use constant DEBUG => 0; # toggle me
 
@@ -54,6 +55,10 @@ sub handleLdap {
 
   #writeDebug("called handleLdap($web, $topic)");
   my $fingerPrint = $params->stringify;
+  if ($params->{urlparam}) {
+    my $q = $this->{session}{request};
+    $fingerPrint .= $q->param($params->{urlparam});
+  }
   $fingerPrint = Digest::MD5::md5_hex($fingerPrint);
   writeDebug("fingerPrint=$fingerPrint");
 
@@ -86,6 +91,21 @@ sub handleLdap {
   my $theExclude = $params->{exclude} || '';
   my $theInclude = $params->{include} || '';
   my $theCasesensitive = $params->{casesensitive} || 'on';
+
+  my $urlparam = $params->{urlparam};
+  if ($urlparam) {
+    my $q = $this->{session}{request};
+    my @flds = split(/\s*,\s*/, $params->{urlparamfields} || $Foswiki::cfg::{Ldap}{DefaultAutocompleteFields} || 'sn,givenName,sAMAccountName');
+    my $infix = $params->{urlparaminfix} || 0;
+    my $urlflt = '|'. join('', map { "($_=". $this->handleLdapEscape({urlparam => $urlparam, infix => $infix}, $topic, $web) .")" } @flds);
+    if ($theFilter ne '') {
+      $theFilter = "($theFilter)" unless $theFilter =~ /^\(.+\)$/s;
+      $theFilter = "(&$theFilter($urlflt))";
+    } else {
+      $theFilter = "($urlflt)";
+    }
+    print STDERR "ldapng filter: $theFilter\n";
+  }
 
   $theSep = $params->{sep} unless defined $theSep;
   $theSep = '$n' unless defined $theSep;
@@ -167,9 +187,11 @@ sub handleLdap {
         $rln = $ldap->rewriteLoginName($rln);
         $rln = $ldap->normalizeLoginName($rln) if $ldap->{normalizeLoginName};
         $data{rewrittenLoginName} = $rln;
-        $data{mappedWikiName} = $ldap->getWikiNameOfLogin($data{rewrittenLoginName});
+        $data{mappedWikiName} = $data{wikiName} = $ldap->getWikiNameOfLogin($data{rewrittenLoginName});
     }
+    my $formatted = $Foswiki::cfg{Ldap}{DefaultLdapFormatted} || '$sn, $givenName ($sAMAccountName)';
     $data{isUser} = $data{mappedWikiName} ? 1 : 0;
+    $data{formatted} = expandVars($formatted, %data);
     $text = expandVars($text, %data);
     $result .= $text;
     last if $index == $theLimit;
@@ -206,7 +228,7 @@ sub handleLdapUsers {
 
   my $ldap = Foswiki::Contrib::LdapContrib::getLdapContrib($this->{session});
   my $theHeader = $params->{header} || ''; 
-  my $theFormat = $params->{format} || '   1 $displayName';
+  my $theFormat = $params->{format} || Foswiki::Func::getPreferencesValue('LDAPFORMATUSER_DEFAULT_FORMAT') || '   1 $displayName';
   my $theFooter = $params->{footer} || '';
   my $theSep = $params->{separator};
   my $theLimit = $params->{limit} || 0;
@@ -280,7 +302,7 @@ sub handleLdapFormatUser {
 
   my $ldap = Foswiki::Contrib::LdapContrib::getLdapContrib($this->{session});
   my $theUser = $params->{_DEFAULT};
-  my $theFormat = $params->{format} || '$displayName';
+  my $theFormat = $params->{format} || Foswiki::Func::getPreferencesValue('LDAPFORMATUSER_DEFAULT_FORMAT') || '$displayName';
   my $theCasesensitive = $params->{casesensitive} || 'on';
   my $theDefaultText = $params->{default} || '';
 
@@ -299,9 +321,11 @@ sub handleLdapFormatUser {
 
   return expandVars($theFormat,
     wikiName=>$wikiName,
+    mappedWikiName=>$wikiName, # convenience alias
     displayName=>$displayName,
     dn=>$distinguishedName,
     loginName=>$theUser,
+    rewrittenLoginName=>$theUser, # convenience alias
     emails=>$email,
     %$display);
 }
@@ -344,6 +368,24 @@ sub handleEmailToWikiName {
 }
 
 ###############################################################################
+sub handleLdapEscape {
+  my ($this, $params, $topic, $web) = @_;
+
+  my $data = '';
+  my $q = $this->{session}{request};
+  if ($params->{urlparam}) {
+    $data = $q->param($params->{urlparam});
+  } else {
+    $data = $params->{_DEFAULT};
+  }
+  $data =~ s#([\\*()\x00])#"\\".lc(unpack('H2', ord($1)))#eg;
+  $data = "*$data*" if $params->{infix} && $params->{infix} =~ /^(?:1|on|yes|true)$/;
+  $data =~ s/^\*\*$/*/s;
+
+  return $data;
+}
+
+###############################################################################
 sub inlineError {
   return "<div class=\"foswikiAlert\">$_[0]</div>";
 }
@@ -365,6 +407,7 @@ sub expandVars {
     $value =~ s/\\\\/\\/go;
 
     $format =~ s/\$$key\b/$value/gi;
+    $format =~ s/\$json$key\b/JSON->new->allow_nonref->encode($value)/egi;
     #writeDebug("$key=$value");
   }
 

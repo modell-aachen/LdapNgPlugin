@@ -42,6 +42,10 @@ sub initPlugin {
     return getCore(shift)->handleEmailToWikiName(@_);
   });
 
+  Foswiki::Func::registerTagHandler('LDAPESCAPE', sub {
+    return getCore(shift)->handleLdapEscape(@_);
+  });
+
   $core = undef;
 
   return 1; 
