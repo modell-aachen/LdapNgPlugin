@@ -1,0 +1,59 @@
+<verbatim class="tml">
+%STARTSECTION{"user"}%
+<literal>
+%LDAP{
+  "objectClass=user"
+  urlparam="term"
+  urlparaminfix="1"
+  hideunknown="on"
+  casesensitive="off"
+  header="["
+  format="{\"value\":$jsonrewrittenLoginName\",\"label\":$jsonformatted}"
+  footer="]"
+  sep=","
+  limit="%URLPARAM{"limit" default="20"}%" 
+}%
+</literal>
+%ENDSECTION{"user"}%
+</verbatim>
+
+<verbatim class="tml">
+%STARTSECTION{"s2user"}%
+<literal>
+%LDAP{
+  "objectClass=user"
+  urlparam="q"
+  urlparaminfix="1"
+  hideunknown="on"
+  casesensitive="off"
+  header="{\"results\":["
+  format="{\"id\":$jsonrewrittenLoginName,\"text\":$jsonformatted}"
+  footer="]}"
+  sep=","
+  limit="%URLPARAM{"limit" default="20"}%" 
+}%
+</literal>
+%ENDSECTION{"s2user"}%
+
+%STARTSECTION{"s2user_display"}%%LDAP{
+  "samaccountname=%id%"
+  hideunknown="on"
+  casesensitive="off"
+  format="$formatted"
+}%%ENDSECTION{"s2user_display"}%
+
+%STARTSECTION{"s2user_init"}%
+%LDAP{
+  "samaccountname=%id%"
+  hideunknown="on"
+  casesensitive="off"
+  format="{\"id\":$jsonrewrittenLoginName,\"text\":$jsonformatted}"
+}%
+%ENDSECTION{"s2user_init"}%
+%STARTSECTION{"s2multiuser_init"}%
+[%FORMATLIST{"%id%"
+  format="$percntLDAP{\"samaccountname=$1\" hideunknown=\"on\" casesensitive=\"off\" format=\"{\\"id\\":$jsonrewrittenLoginName,\\"text\\":$jsonformatted}\"}$percnt"
+}%]
+%ENDSECTION{"s2multiuser_init"}%
+</verbatim>
+
