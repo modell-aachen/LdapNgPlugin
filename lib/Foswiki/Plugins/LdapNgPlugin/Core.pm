@@ -1,6 +1,6 @@
 # Plugin for Foswiki - The Free and Open Source Wiki, http://foswiki.org/
 #
-# Copyright (C) 2006-2011 Michael Daum http://michaeldaumconsulting.com
+# Copyright (C) 2006-2014 Michael Daum http://michaeldaumconsulting.com
 # Portions Copyright (C) 2006 Spanlink Communications
 #
 # This program is free software; you can redistribute it and/or
@@ -16,37 +16,47 @@
 package Foswiki::Plugins::LdapNgPlugin::Core;
 
 use strict;
+use warnings;
+
 use Foswiki::Contrib::LdapContrib ();
 use Digest::MD5 ();
 use Cache::FileCache();
+use Encode ();
 use JSON;
 
-use constant DEBUG => 0; # toggle me
+use constant TRACE => 0;    # toggle me
 
 ###############################################################################
 sub new {
   my ($class, $session) = @_;
 
-  my $this = bless({
-    session => $session
-  }, $class);
+  my $this = bless({ session => $session }, $class);
 
-  $this->{cache} = new Cache::FileCache({
-    'namespace'  => 'LdapNgPlugin',
-    'cache_root' => Foswiki::Func::getWorkArea('LdapNgPlugin').'/cache/',
-    'cache_depth'     => 3,
-    'directory_umask' => 077,
-  });
-
+  $this->{cache} = new Cache::FileCache(
+    {
+      'namespace' => 'LdapNgPlugin',
+      'cache_root' => Foswiki::Func::getWorkArea('LdapNgPlugin') . '/cache/',
+      'cache_depth' => 3,
+      'directory_umask' => 077,
+    }
+  );
 
   return $this;
 }
 
 ###############################################################################
+sub finish {
+  my $this = shift;
+
+  $this->{cache} = undef;
+}
+
+###############################################################################
 sub writeDebug {
+
   # comment me in/out
-  #&Foswiki::Func::writeDebug('- LdapNgPlugin - '.$_[0]) if DEBUG;
-  print STDERR 'LdapNgPlugin - '.$_[0]."\n" if DEBUG;
+  #Foswiki::Func::writeDebug('- LdapNgPlugin - '.$_[0]) if TRACE;
+  print STDERR 'LdapNgPlugin - ' . $_[0] . "\n" if TRACE;
 }
 
 ###############################################################################
@@ -60,16 +70,24 @@ sub handleLdap {
     $fingerPrint .= $q->param($params->{urlparam});
   }
   $fingerPrint = Digest::MD5::md5_hex($fingerPrint);
-  writeDebug("fingerPrint=$fingerPrint");
 
-  my $data = $this->{cache}->get($fingerPrint);
-  if ($data) {
-    writeDebug("found response in cache");
-    return $data;
+  my $query = Foswiki::Func::getCgiQuery();
+  my $theRefresh = $query->param('refresh') || '';
+  $theRefresh = 1 if $theRefresh =~ /^(on|ldap)$/;
+
+  my $theCache = $params->{cache};
+  $theCache = $Foswiki::cfg{Ldap}{DefaultCacheExpire} unless defined $theCache;
+
+  if ($theCache && !$theRefresh) {
+    my $data = $this->{cache}->get($fingerPrint);
+    if ($data) {
+      writeDebug("found response in cache");
+      return $data;
+    }
   }
 
   # get args
-  my $theCache = $params->{cache} || $Foswiki::cfg{Ldap}{DefaultCacheExpire};
+
   my $theFilter = $params->{'filter'} || $params->{_DEFAULT} || '';
   my $theBase = $params->{'base'} || $Foswiki::cfg{Ldap}{Base} || '';
   my $theHost = $params->{'host'} || $Foswiki::cfg{Ldap}{Host} || 'localhost';
@@ -78,19 +96,25 @@ sub handleLdap {
   my $theSSL = $params->{ssl} || $Foswiki::cfg{Ldap}{SSL} || 0;
   my $theScope = $params->{scope} || 'sub';
   my $theFormat = $params->{format} || '$dn';
-  my $theHeader = $params->{header} || ''; 
+  my $theHeader = $params->{header} || '';
   my $theFooter = $params->{footer} || '';
-  my $theSep = $params->{separator};
   my $theSort = $params->{sort} || '';
-  my $theReverse = $params->{reverse} || 'off';
+  my $theReverse = Foswiki::Func::isTrue($params->{reverse}, 0);
   my $theLimit = $params->{limit} || 0;
   my $theSkip = $params->{skip} || 0;
-  my $theHideNull = $params->{hidenull} || 'off';
+  my $theHideNull = Foswiki::Func::isTrue($params->{hidenull}, 0);
   my $theNullText = $params->{nulltext} || '';
   my $theClear = $params->{clear} || '';
   my $theExclude = $params->{exclude} || '';
   my $theInclude = $params->{include} || '';
-  my $theCasesensitive = $params->{casesensitive} || 'on';
+  my $theCasesensitive = Foswiki::Func::isTrue($params->{casesensitive}, 1);
+  my $theBlobAttrs = $params->{blob} || '';
+
+  my %blobAttrs = map {$_ => 1} split(/\s*,\s*/, $theBlobAttrs);
+
+  # backwards compatibility. note that you won't be able to have a jpegPhoto attribute
+  # in your ldap that is _not_ to be handled as a blob 
+  $blobAttrs{jpegPhoto} = 1; 
 
   my $urlparam = $params->{urlparam};
   if ($urlparam) {
@@ -107,59 +131,63 @@ sub handleLdap {
     print STDERR "ldapng filter: $theFilter\n";
   }
 
+  my $theSep = $params->{separator};
   $theSep = $params->{sep} unless defined $theSep;
   $theSep = '$n' unless defined $theSep;
-  my $query = Foswiki::Func::getCgiQuery();
-  my $theRefresh = $query->param('refresh') || 0;
-  $theRefresh = ($theRefresh eq 'on')?1:0;
+
 
   # fix args
   $theSkip =~ s/[^\d]//go;
   $theLimit =~ s/[^\d]//go;
   my @theSort = split(/[\s,]+/, $theSort);
-  $theBase = $1.','.$Foswiki::cfg{Ldap}{Base} if $theBase =~ /^\((.*)\)$/;
-  #writeDebug("base=$theBase");
+  $theBase = $1 . ',' . $Foswiki::cfg{Ldap}{Base} if $theBase =~ /^\((.*)\)$/;
+
+  writeDebug("base=$theBase");
+  writeDebug("filter=$theFilter");
   #writeDebug("format=$theFormat");
 
   # new connection
   my $ldap = new Foswiki::Contrib::LdapContrib(
     $this->{session},
-    base=>$theBase,
-    host=>$theHost,
-    port=>$thePort,
-    version=>$theVersion,
-    ssl=>$theSSL,
+    base => $theBase,
+    host => $theHost,
+    port => $thePort,
+    version => $theVersion,
+    ssl => $theSSL,
   );
 
-  # search 
+  # search
+  my @entries = ();
   my $search = $ldap->search(
-    filter=>$theFilter, 
-    base=>$theBase, 
-    scope=>$theScope, 
-    sizelimit=>($theReverse eq 'on')?0:$theLimit
+    filter => $theFilter,
+    base => $theBase,
+    scope => $theScope,
+    sizelimit => $theReverse ? 0 : $theLimit,
+    callback => sub {
+      push @entries, $_[1];
+    }
   );
   unless (defined $search) {
-    return &inlineError('ERROR: '.$ldap->getError());
+    return inlineError('ERROR: ' . $ldap->getError());
   }
 
-  my $count = $search->count() || 0;
-  return $theNullText if ($count <= $theSkip) && $theHideNull eq 'on';
+  # DISABLED: as it destroys the @entries array colleced while following references etc
+  # TODO: use our own sorting or borrow from Net::LDAP::Search
+  #@entries = $search->sorted(@theSort); 
 
-  # format
-  my $result = '';
-  my @entries = $search->sorted(@theSort);
-  @entries = reverse @entries if $theReverse eq 'on';
+  my $count = $search->count() || 0;
+
+  @entries = reverse @entries if $theReverse;
   my $index = 0;
-  $ldap->initCache();
+  my @results = ();
   foreach my $entry (@entries) {
     my $dn = $entry->dn();
-    
-    if ( $theCasesensitive eq 'off' ) {
-    	next if $theExclude && $dn =~ /$theExclude/i;
-    	next if $theInclude && $dn !~ /$theInclude/i;
+    if ($theCasesensitive) {
+      next if $theExclude && $dn =~ /$theExclude/;
+      next if $theInclude && $dn !~ /$theInclude/;
     } else {
-    	next if $theExclude && $dn =~ /$theExclude/;
-    	next if $theInclude && $dn !~ /$theInclude/;
+      next if $theExclude && $dn =~ /$theExclude/i;
+      next if $theInclude && $dn !~ /$theInclude/i;
     }
 
     $index++;
@@ -170,15 +198,12 @@ sub handleLdap {
     $data{index} = $index;
     $data{count} = $count;
     foreach my $attr ($entry->attributes()) {
-      if ($attr =~ /jpegPhoto/) { # TODO make blobs configurable 
-	$data{$attr} = $ldap->cacheBlob($entry, $attr, $theRefresh);
+      if ($blobAttrs{$attr}) { 
+        $data{$attr} = $ldap->cacheBlob($entry, $attr, $theRefresh);
       } else {
-	$data{$attr} = $entry->get_value($attr, asref=>1);
+        $data{$attr} = $ldap->fromLdapCharSet($entry->get_value($attr));
       }
     }
-    my $text = '';
-    $text .= $theSep if $result;
-    $text .= $theFormat;
     my $loginName = $data{$ldap->{loginAttribute}};
     $loginName = $loginName->[0] if ref $loginName;
     if ($loginName) {
@@ -192,31 +217,32 @@ sub handleLdap {
     my $formatted = $Foswiki::cfg{Ldap}{DefaultLdapFormatted} || '$sn, $givenName ($sAMAccountName)';
     $data{isUser} = $data{mappedWikiName} ? 1 : 0;
     $data{formatted} = expandVars($formatted, %data);
-    $text = expandVars($text, %data);
-    $result .= $text;
+    push @results, expandVars($theFormat, %data);
     last if $index == $theLimit;
   }
-  $ldap->disconnect();
+  $ldap->finish();
 
-  $theHeader = expandVars($theHeader,count=>$count) if $theHeader;
-  $theFooter = expandVars($theFooter,count=>$count) if $theFooter;
+  $count = scalar(@results);
+  return $theNullText if ($count <= $theSkip) && $theHideNull eq 'on';
+  return '' if $theHideNull && !$count;
 
-  $result = $ldap->fromUtf8($result);
-  $result = $theHeader.$result.$theFooter;
+  my $result = expandVars($theHeader . join($theSep, @results) . $theFooter, count => $count);
 
-  #writeDebug("done handleLdap()");
   #writeDebug("result=$result");
 
   if ($theClear) {
     $theClear =~ s/\$/\\\$/g;
-    my $regex = join('|',split(/[\s,]+/,$theClear));
+    my $regex = join('|', split(/[\s,]+/, $theClear));
     $result =~ s/$regex//g;
   }
+
+  $result = decodeFormatTokens($result);
 
   if ($theCache) {
     $this->{cache}->set($fingerPrint, $result, $theCache);
   }
 
+  writeDebug("done handleLdap()");
   return $result;
 }
 
@@ -227,40 +253,41 @@ sub handleLdapUsers {
   #writeDebug("called handleLdapUsers($web, $topic)");
 
   my $ldap = Foswiki::Contrib::LdapContrib::getLdapContrib($this->{session});
-  my $theHeader = $params->{header} || ''; 
-  my $theFormat = $params->{format} || Foswiki::Func::getPreferencesValue('LDAPFORMATUSER_DEFAULT_FORMAT') || '   1 $displayName';
+  my $theHeader = $params->{header} || '';
   my $theFooter = $params->{footer} || '';
-  my $theSep = $params->{separator};
   my $theLimit = $params->{limit} || 0;
   my $theSkip = $params->{skip} || 0;
   my $theInclude = $params->{include};
   my $theIncludeLogin = $params->{includelogin};
   my $theExclude = $params->{exclude};
-  my $theCasesensitive = $params->{casesensitive} || 'on';
+  my $theCasesensitive = Foswiki::Func::isTrue($params->{casesensitive}, 1);
   my $theDefaultText = $params->{default} || '';
-  my $theHideUnknownUsers = $params->{hideunknown} || 'on';
-  $theHideUnknownUsers = ($theHideUnknownUsers eq 'on')?1:0;
+  my $theHideUnknownUsers = Foswiki::Func::isTrue($params->{hideunknown}, 1);
 
+  my $theFormat = $params->{format};
+  $theFormat = Foswiki::Func::getPreferencesValue('LDAPFORMATUSER_DEFAULT_FORMAT') unless defined $theFormat;
+  $theFormat = '   1 $displayName' unless defined $theFormat;
+
+  my $theSep = $params->{separator};
   $theSep = $params->{sep} unless defined $theSep;
   $theSep = '$n' unless defined $theSep;
 
-  my $mainWeb = Foswiki::Func::getMainWebname();
+  my $usersWeb = $Foswiki::cfg{UsersWebName};
   my $wikiNames = $ldap->getAllWikiNames();
-  my $result = '';
   $theSkip =~ s/[^\d]//go;
   $theLimit =~ s/[^\d]//go;
 
   my $index = 0;
-  foreach my $wikiName (sort @$wikiNames) {
-    
-    if ( $theCasesensitive eq 'off' ) {
-    	next if $theExclude && $wikiName =~ /$theExclude/i;
-    	next if $theInclude && $wikiName !~ /$theInclude/i;
-    } else {
-    	next if $theExclude && $wikiName =~ /$theExclude/;
-    	next if $theInclude && $wikiName !~ /$theInclude/;
-    }
 
+  my @result = ();
+  foreach my $wikiName (sort @$wikiNames) {
+    if ($theCasesensitive) {
+      next if $theExclude && $wikiName =~ /$theExclude/;
+      next if $theInclude && $wikiName !~ /$theInclude/;
+    } else {
+      next if $theExclude && $wikiName =~ /$theExclude/i;
+      next if $theInclude && $wikiName !~ /$theInclude/i;
+    }
     my $loginName = $ldap->getLoginOfWikiName($wikiName);
     $theIncludeLogin = "(?i)$theIncludeLogin" if $theIncludeLogin && $theCasesensitive ne 'off';
     next if $theIncludeLogin && $loginName !~ /$theIncludeLogin/;
@@ -269,31 +296,32 @@ sub handleLdapUsers {
     my $distinguishedName = $ldap->getDnOfLogin($loginName) || '';
     my $display = $ldap->getDisplayAttributesOfLogin($loginName) || {};
     my $displayName;
-    if (Foswiki::Func::topicExists($mainWeb, $wikiName)) {
-      $displayName = "[[$mainWeb.$wikiName][$wikiName]]";
+
+    if (Foswiki::Func::topicExists($usersWeb, $wikiName)) {
+      $displayName = "[[$usersWeb.$wikiName]]";
     } else {
       next if $theHideUnknownUsers;
-      $displayName ="<nop>$wikiName";
+      $displayName = "<nop>$wikiName";
     }
     $index++;
     next if $index <= $theSkip;
-    my $line;
-    $line = $theSep if $result;
-    $line .= $theFormat;
-    $line = expandVars($line,
-      index=>$index,
-      wikiName=>$wikiName,
-      displayName=>$displayName,
-      dn=>$distinguishedName,
-      loginName=>$loginName,
-      emails=>$emailAddrs,
-      %$display);
-    $result .= $line;
+    push @result, expandVars(
+      $theFormat,
+      index => $index,
+      wikiName => $wikiName,
+      displayName => $displayName,
+      dn => $distinguishedName,
+      loginName => $loginName,
+      emails => $emailAddrs,
+      %$display
+    );
     last if $index == $theLimit;
   }
-  $result = $theDefaultText if $result eq '';
 
-  return expandVars($theHeader).$result.expandVars($theFooter);
+  my $result = $theHeader. join($theSep, @result) . $theFooter;
+  $result = expandVars($result, count => scalar(@result));
+
+  return decodeFormatTokens($result);
 }
 
 ###############################################################################
@@ -330,11 +358,9 @@ sub handleLdapFormatUser {
     %$display);
 }
 
-
 ###############################################################################
 sub handleEmailToWikiName {
   my ($this, $params, $topic, $web) = @_;
-
 
   my $theFormat = $params->{format} || '$wikiname';
   my $theHeader = $params->{header} || '';
@@ -345,14 +371,14 @@ sub handleEmailToWikiName {
   $theSep = ', ' unless defined $theSep;
 
   my @wikiNames = Foswiki::Func::emailToWikiNames($theEmail, 1);
-  my $mainWeb = Foswiki::Func::getMainWebname();
+  my $usersWeb = $Foswiki::cfg{UsersWebName};
   my @result = ();
   my $count = scalar(@wikiNames);
   my $index = 0;
   foreach my $wikiName (sort @wikiNames) {
     $index++;
     my $line = $theFormat;
-    my $wikiUserName = $mainWeb.'.'.$wikiName;
+    my $wikiUserName = $usersWeb . '.' . $wikiName;
     $line =~ s/\$wikiname/$wikiName/g;
     $line =~ s/\$wikiusername/$wikiUserName/g;
     $line =~ s/\$index/$index/g;
@@ -364,7 +390,7 @@ sub handleEmailToWikiName {
   $theHeader =~ s/\$count/$count/g;
   $theFooter =~ s/\$count/$count/g;
 
-  return $theHeader.join($theSep, @result).$theFooter;
+  return $theHeader . join($theSep, @result) . $theFooter;
 }
 
 ###############################################################################
@@ -391,6 +417,19 @@ sub inlineError {
 }
 
 ###############################################################################
+sub decodeFormatTokens {
+  my $text = shift;
+
+  $text =~ s/\$nop//g;
+  $text =~ s/\$n/\n/g;
+  $text =~ s/\$quot/\"/g;
+  $text =~ s/\$perce?nt/\%/g;
+  $text =~ s/\$dollar/\$/g;
+
+  return $text;
+}
+
+###############################################################################
 sub expandVars {
   my ($format, %data) = @_;
 
@@ -401,24 +440,121 @@ sub expandVars {
     next unless defined $value;
     $value = join(', ', sort @$value) if ref($data{$key}) eq 'ARRAY';
 
-    # Format list values using the '$' delimiter in multiple lines; see rfc4517
-    $value =~ s/([^\\])\$/$1<br \/>/go; 
-    $value =~ s/\\\$/\$/go;
-    $value =~ s/\\\\/\\/go;
+    # format list values using the '$' delimiter in multiple lines; see rfc4517
+    # The only attribute I've seen so far where this rule should be used is in in postalAddress.
+    # In most other cases this hurts a lot more than anything else.
+    if ($key =~ /^(postalAddress)$/) { # TODO: make this rule configurable
+      $value =~ s/([^\\])\$/$1<br \/>/go;
+      $value =~ s/\\\$/\$/go;
+      $value =~ s/\\\\/\\/go;
+    }
 
     $format =~ s/\$$key\b/$value/gi;
     $format =~ s/\$json$key\b/JSON->new->allow_nonref->encode($value)/egi;
+
     #writeDebug("$key=$value");
   }
 
-  $format =~ s/\$nop//go;
-  $format =~ s/\$n/\n/go;
-  $format =~ s/\$quot/\"/go;
-  $format =~ s/\$percnt/\%/go;
-  $format =~ s/\$dollar/\$/go;
-
   #writeDebug("done expandVars()");
   return $format;
+}
+
+###############################################################################
+sub indexTopicHandler {
+  my ($this, $indexer, $doc, $web, $topic, $meta, $text) = @_;
+
+  my $personAttributes = $Foswiki::cfg{Ldap}{PersonAttribures};
+  return unless $personAttributes && keys %$personAttributes;
+
+  #print STDERR "personAttributes=".join(", ", keys %{$personAttributes})."\n";
+
+  ($meta) = Foswiki::Func::readTopic($web, $topic) unless $meta;
+
+  my $personDataForm = $Foswiki::cfg{Ldap}{PersonDataForm} || 'UserForm';
+  my $formName = $meta->getFormName;
+  return unless $formName && $formName =~ /$personDataForm/;
+
+  #print STDERR "found form $formName\n";
+
+  my $wikiName = $topic;
+  my $loginName = Foswiki::Func::wikiToUserName($wikiName);
+
+  unless ($loginName) {
+    print STDERR "WARNING: can't find loginName for $wikiName in user database ... alumni?\n";
+    return;
+  }
+
+  my @emails = Foswiki::Func::wikinameToEmails($wikiName);
+
+  #print STDERR "wikiName='$wikiName', loginName=$loginName, emails=" . join(", ", @emails) . "\n";
+
+  if ($Foswiki::cfg{Ldap}{IndexEmails}) {
+    my $email = shift @emails;    # SMELL: taking only the first known one
+    if ($email) {
+      _set_field($doc, 'field_Email_s', $email);
+      _set_field($doc, 'field_Email_search', $email);
+    }
+  }
+
+  my $ldap = new Foswiki::Contrib::LdapContrib($this->{session});
+  my $filter = "$ldap->{loginAttribute}=$loginName";
+
+  #print STDERR "filter='$filter'\n";
+  my $entry;
+  
+  my $search = $ldap->search(
+    filter => $filter,
+    limit => 1,
+    attrs => [ keys %$personAttributes ],
+    callback => sub {
+      my (undef, $result) = @_;
+      return unless defined $result;
+      $entry = $result;
+    },
+  );
+
+  unless ($entry) {
+    #print STDERR "$loginName not found in LDAP directory\n";
+    return;
+  }
+
+  foreach my $attr ($entry->attributes()) {
+    my $value = $entry->get_value($attr);
+    next unless defined $value && $value ne '';
+
+    $value = $ldap->fromLdapCharSet($value);
+
+    my $label = $personAttributes->{$attr};
+    #print STDERR "$label: $value\n";
+
+    _set_field($doc, 'field_' . $label . '_s', $value);
+    _set_field($doc, 'field_' . $label . '_search', $value);
+  }
+
+  if ($Foswiki::cfg{Ldap}{IgnoreViewRightsInSearch}) {
+    writeDebug("ignoring access in search for $web.$topic");
+    $doc->add_fields('access_granted' => 'all');
+  }
+
+  $ldap->finish();
+}
+
+sub _set_field {
+  my ($doc, $name, $val) = @_;
+
+  foreach my $field ($doc->fields) {
+    if ($field->{name} eq $name) {
+      if ($Foswiki::cfg{Ldap}{PreferLocalSettings} && $field->{value}) {
+        #print STDERR "keeping field $name = $val from local settings\n";
+      } else {
+        #print STDERR "setting field $name to $val (was '$field->{value}')\n";
+        $field->{value} = $val;
+      }
+      return;
+    }
+  }
+
+  $doc->add_fields($name => $val);
 }
 
 1;
