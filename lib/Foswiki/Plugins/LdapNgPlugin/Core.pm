@@ -155,6 +155,7 @@ sub handleLdap {
     version => $theVersion,
     ssl => $theSSL,
   );
+  $ldap->initCache;
 
   # search
   my @entries = ();
