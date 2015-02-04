@@ -348,7 +348,7 @@ sub handleLdapFormatUser {
   }
   return $theDefaultText if !$wikiName;
 
-  return expandVars($theFormat,
+  return decodeFormatTokens(expandVars($theFormat,
     wikiName=>$wikiName,
     mappedWikiName=>$wikiName, # convenience alias
     displayName=>$displayName,
@@ -356,7 +356,7 @@ sub handleLdapFormatUser {
     loginName=>$theUser,
     rewrittenLoginName=>$theUser, # convenience alias
     emails=>$email,
-    %$display);
+    %$display));
 }
 
 ###############################################################################
