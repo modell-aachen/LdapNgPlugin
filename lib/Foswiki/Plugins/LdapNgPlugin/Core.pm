@@ -224,7 +224,7 @@ sub handleLdap {
   $ldap->finish();
 
   $count = scalar(@results);
-  return $theNullText if ($count <= $theSkip) && $theHideNull eq 'on';
+  return $theNullText if ($count <= $theSkip) && $theHideNull;
   return '' if $theHideNull && !$count;
 
   my $result = expandVars($theHeader . join($theSep, @results) . $theFooter, count => $count);
@@ -290,7 +290,7 @@ sub handleLdapUsers {
       next if $theInclude && $wikiName !~ /$theInclude/i;
     }
     my $loginName = $ldap->getLoginOfWikiName($wikiName);
-    $theIncludeLogin = "(?i)$theIncludeLogin" if $theIncludeLogin && $theCasesensitive ne 'off';
+    $theIncludeLogin = "(?i)$theIncludeLogin" if $theIncludeLogin && !$theCasesensitive;
     next if $theIncludeLogin && $loginName !~ /$theIncludeLogin/;
 
     my $emailAddrs = $ldap->getEmails($loginName);
