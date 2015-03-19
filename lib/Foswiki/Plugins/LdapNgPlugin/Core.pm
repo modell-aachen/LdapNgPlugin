@@ -262,7 +262,7 @@ sub handleLdapUsers {
     }
 
     my $loginName = $ldap->getLoginOfWikiName($wikiName);
-    $theIncludeLogin = "(?i)$theIncludeLogin" if $theIncludeLogin && $theCasesensitive ne 'off';
+    $theIncludeLogin = "(?i)$theIncludeLogin" if $theIncludeLogin && $theCasesensitive eq 'off';
     next if $theIncludeLogin && $loginName !~ /$theIncludeLogin/;
 
     my $emailAddrs = $ldap->getEmails($loginName);
