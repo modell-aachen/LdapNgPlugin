@@ -182,10 +182,11 @@ sub handleLdap {
   my $index = 0;
   my @results = ();
   foreach my $entry (@entries) {
-    my $dn = $entry->dn();
-    if ($theCasesensitive) {
-      next if $theExclude && $dn =~ /$theExclude/;
-      next if $theInclude && $dn !~ /$theInclude/;
+    my $dn = $ldap->fromLdapCharSet($entry->dn());
+
+    if ( $theCasesensitive eq 'off' ) {
+      next if $theExclude && $dn =~ /$theExclude/i;
+      next if $theInclude && $dn !~ /$theInclude/i;
     } else {
       next if $theExclude && $dn =~ /$theExclude/i;
       next if $theInclude && $dn !~ /$theInclude/i;
@@ -202,14 +203,16 @@ sub handleLdap {
       if ($blobAttrs{$attr}) { 
         $data{$attr} = $ldap->cacheBlob($entry, $attr, $theRefresh);
       } else {
-        $data{$attr} = $ldap->fromLdapCharSet($entry->get_value($attr));
+        my $res = $entry->get_value($attr, asref => 1);
+        $res = map { $ldap->fromLdapCharSet($_) } @$res if defined $res;
+        $data{$attr} = $res;
       }
     }
     my $loginName = $data{$ldap->{loginAttribute}};
     $loginName = $loginName->[0] if ref $loginName;
     if ($loginName) {
         my $rln = $loginName;
-        $rln = $ldap->locale_lc($loginName) if $ldap->{caseSensitivity} eq 'off';
+        $rln = lc($loginName) if $ldap->{caseSensitivity} eq 'off';
         $rln = $ldap->rewriteLoginName($rln);
         $rln = $ldap->normalizeLoginName($rln) if $ldap->{normalizeLoginName};
         $data{rewrittenLoginName} = $rln;
