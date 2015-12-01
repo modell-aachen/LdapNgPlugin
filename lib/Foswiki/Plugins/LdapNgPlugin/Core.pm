@@ -204,7 +204,7 @@ sub handleLdap {
         $data{$attr} = $ldap->cacheBlob($entry, $attr, $theRefresh);
       } else {
         my $res = $entry->get_value($attr, asref => 1);
-        $res = map { $ldap->fromLdapCharSet($_) } @$res if defined $res;
+        $res = [ map { $ldap->fromLdapCharSet($_) } @$res ] if defined $res;
         $data{$attr} = $res;
       }
     }
