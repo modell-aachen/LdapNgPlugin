@@ -5,7 +5,7 @@
 This plugin provides an interface to query an LDAP directory and display the results in a <nop>WikiApplication
 It is a complete rewrite of the Foswiki:Extensions/LdapPlugin by Gerard Hickey to provide
 greater flexibility and performance based on the Foswiki:Extensions/LdapContrib package.
-
+ 
 ---++ Syntax Rules
 ---+++ LDAP
 <verbatim>%LDAP{(filter=)"filter" ...}%</verbatim>
